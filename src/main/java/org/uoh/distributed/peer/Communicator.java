@@ -5,9 +5,13 @@ import org.slf4j.LoggerFactory;
 import org.uoh.distributed.utils.Constants;
 import org.uoh.distributed.utils.RequestBuilder;
 
+import java.io.IOException;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,6 +33,8 @@ public class Communicator
         this.node = node;
         executorService = Executors.newCachedThreadPool();
         started = true;
+        logger.info("Communication between peers started");
+
     }
 
     public Set<RoutingTableEntry> connect( InetSocketAddress peer )
@@ -39,7 +45,7 @@ public class Communicator
         logger.debug( "Received response : {}", response );
         if( response != null )
         {
-            Object obj = RequestBuilder.base64StringToObject( response.split( " " )[3] );
+            Object obj = RequestBuilder.base64StringToObject( response.split( Constants.MSG_SEPARATOR)[3] );
             logger.debug( "Received routing table entries -> {}", obj );
             if( obj != null )
             {
@@ -55,6 +61,26 @@ public class Communicator
     public boolean disconnect( InetSocketAddress peer )
     {
         return false;
+    }
+
+    public Object notifyNewNode( InetSocketAddress peer, InetSocketAddress me, int nodeId )
+    {
+        String msg = String.format( Constants.NEWNODE_MSG_FORMAT, me.getHostName(), me.getPort(), nodeId );
+        String request = RequestBuilder.buildRequest( msg );
+        logger.debug( "Notifying new node to {} as message: {}", peer, request );
+        String response = retryOrTimeout( request, peer );
+        logger.debug( "Received response : {}", response );
+        if( response != null )
+        {
+            Object obj = RequestBuilder.base64StringToObject( response.split( Constants.MSG_SEPARATOR )[3] );
+            logger.debug( "Received characters to be taken over -> {}", obj );
+            if( obj != null )
+            {
+                return  obj;
+            }
+        }
+
+        return new HashMap<>();
     }
 
 
@@ -119,4 +145,36 @@ public class Communicator
         }
         return null;
     }
+
+
+    public Object ping( InetSocketAddress peer, Object toBeHandedOver )
+    {
+        String base64 = null;
+        try
+        {
+            base64 = RequestBuilder.buildObjectRequest( toBeHandedOver );
+        }
+        catch( IOException e )
+        {
+            logger.error( "Error occurred when encoding entries to be handed over to -> {}", peer, e );
+            throw new IllegalArgumentException( "Unable to encode entries", e );
+        }
+
+        String msg = String.format( Constants.PING_MSG_FORMAT, this.node.getNodeId(), base64 );
+        String request = RequestBuilder.buildRequest( msg );
+        logger.debug( "Pinging -> {}", peer );
+        String response = retryOrTimeout( 1, request, peer );
+        logger.debug( "Received response : {}", response );
+        if( response != null )
+        {
+            Object obj = RequestBuilder.base64StringToObject( response );
+            logger.debug( "Received entry table of ({}) -> {}", peer, obj );
+            if( obj != null )
+            {
+                return (Object) obj;
+            }
+        }
+        return null;
+    }
+
 }

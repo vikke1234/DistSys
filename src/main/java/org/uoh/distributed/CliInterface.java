@@ -52,7 +52,7 @@ public class CliInterface
         }
         catch( Exception e )
         {
-            System.err.println( "Error occurred: " + e.getMessage() );
+            System.err.println( "Error occurred: " + e );
             return;
         }
 

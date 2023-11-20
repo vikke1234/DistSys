@@ -28,7 +28,7 @@ public class Node
 {
     private static final Logger logger = LoggerFactory.getLogger( Node.class );
 
-    private NodeState state = NodeState.IDLE;
+    private final StateManager state = new StateManager( NodeState.IDLE );
 
     private final String username;
     private final String ipAddress;
@@ -37,8 +37,10 @@ public class Node
     private final RoutingTable routingTable = new RoutingTable();
 
     private final NodeServer server;
-    private final Communicator communicationProvider;
+    private final Communicator communicationProvider;   //  Peer communication provider
+
     private ScheduledExecutorService executorService;
+    private ScheduledFuture<?> periodicTask;
 
     private BootstrapConnector bootstrapProvider = new BootstrapConnector();
 
@@ -68,33 +70,37 @@ public class Node
 
     public void start()
     {
-
+        state.checkState( NodeState.IDLE );
         Runtime.getRuntime().addShutdownHook( new Thread( this::stop ) );
 
-        executorService = Executors.newScheduledThreadPool( 2 );
+        executorService = Executors.newScheduledThreadPool( 3 );
         server.start( this );
         communicationProvider.start( this );
 
 
         logger.debug( "Connecting to the distributed network" );
-        //        while (!stateManager.isState(CONNECTING)) {
-        //            if (stateManager.isState(REGISTERED)) {
-        //                unregister();
-        //            }
-
-        List<InetSocketAddress> peers = register();
-
-        //            if (stateManager.isState(REGISTERED)) {
-        Set<RoutingTableEntry> entries = connect( peers );
-        // peer size become 0 only when we registered successfully
-        if( peers.size() == 0 || entries.size() > 0 )
+        while( !state.isState( NodeState.CONNECTING ) )
         {
-            this.updateRoutingTable( entries );
-            //                    stateManager.setState(CONNECTING);
-            logger.info( "Successfully connected to the network and created routing table" );
+            if( state.isState( NodeState.REGISTERED ) )
+            {
+                unregister();
+            }
+
+            List<InetSocketAddress> peers = register();  // Get 2 peers
+
+            if( state.isState( NodeState.REGISTERED ) )
+            {
+                Set<RoutingTableEntry> entries = connect( peers );
+                // peer size become 0 only when we connected successfully
+                if( peers.size() == 0 || entries.size() > 0 )
+                {
+                    this.updateRoutingTable( entries );
+                    state.setState( NodeState.CONNECTING );
+                    logger.info( "Successfully connected to the network and created routing table" );
+                }
+            }
+
         }
-
-
         // 1. Select a Node Name
         this.nodeId = selectNodeName();
         logger.info( "Selected node ID -> {}", this.nodeId );
@@ -102,29 +108,27 @@ public class Node
         // 2. Add my node to my routing table
         routingTable.addEntry( new RoutingTableEntry( new InetSocketAddress( ipAddress, port ), this.nodeId ) );
         logger.info( "My routing table is -> {}", routingTable.getEntries() );
-        state = ( NodeState.CONNECTED );
+        state.setState( NodeState.CONNECTED );
 
 
         configure();
-
+        state.setState( NodeState.CONFIGURED );
 
         // TODO: 10/24/17 Periodic synchronization
         /*
          * 1. Find 2 predecessors of mine.
          * 2. Then periodically ping them and synchronize with their entry tables.
          */
-//        periodicTask = executorService.scheduleAtFixedRate( () ->
-//
-//                                                            {
-//                                                                try
-//                                                                {
-//                                                                    runPeriodically();
-//                                                                }
-//                                                                catch( Exception e )
-//                                                                {
-//                                                                    logger.error( "Error occurred when running periodic check", e );
-//                                                                }
-//                                                            }, Constants.HEARTBEAT_INITIAL_DELAY, Constants.HEARTBEAT_FREQUENCY_MS, TimeUnit.MILLISECONDS );
+        periodicTask = executorService.scheduleAtFixedRate( () -> {
+                        try
+                        {
+                            runPeriodically();
+                        }
+                        catch( Exception e )
+                        {
+                            logger.error( "Error occurred when running periodic check", e );
+                        }
+        }, Constants.HEARTBEAT_INITIAL_DELAY, Constants.HEARTBEAT_FREQUENCY_MS, TimeUnit.MILLISECONDS );
     }
 
     /**
@@ -151,7 +155,7 @@ public class Node
         }
         else
         {
-            state = NodeState.REGISTERED;
+            state.setState( NodeState.REGISTERED );
             logger.info( "Node ({}:{}) registered successfully. Peers -> {}", ipAddress, port, peers );
         }
 
@@ -161,14 +165,25 @@ public class Node
 
     private void configure()
     {
-        // Do some specific work here
+        // Broadcast that I have joined the network to all entries in the routing table
+        this.routingTable.getEntries().parallelStream()
+                         .filter( entry -> entry.getNodeId() != this.nodeId )
+                         .forEach( entry -> {
+                             Object toBeUndertaken = communicationProvider.notifyNewNode( entry.getAddress(), new InetSocketAddress( ipAddress, port ), this.nodeId );
+                         } );
+        /*
+            Do some specific work
+            1) Load global map
+            2) If need to join to chord then join
+         */
+
     }
 
     private void runPeriodically()
     {
         /*
-           ping to other Nodes
-           Synchronize Map
+           1) ping to other Nodes
+           2) Synchronize Map
          */
 
     }
@@ -209,7 +224,7 @@ public class Node
         try
         {
             bootstrapProvider.unregister( ipAddress, port, username );
-           state = ( NodeState.IDLE );
+            state .setState ( NodeState.IDLE );
             logger.debug( "Unregistered from Bootstrap Server" );
         }
         catch( IOException e )
@@ -218,20 +233,11 @@ public class Node
         }
     }
 
-    /**
-     * Selects a Node Name for the newly connected node (this one). When selecting, we chose a random node name within
-     * <strong>1 - 180</strong> which maps from <strong>[A-Z0-9] -> [1-180]</strong>.
-     *
-     * @return The selected node name
-     */
+
     private int selectNodeName()
     {
-        Set<Integer> usedNodes = this.routingTable.getEntries().stream()
-                                                  .map( entry -> entry.getNodeId() / Constants.ADDRESSES_PER_CHARACTER )
-                                                  .collect( Collectors.toSet() );
-
+        Set<Integer> usedNodes = this.routingTable.getEntries().stream().map( RoutingTableEntry::getNodeId ).collect( Collectors.toSet() );
         Random random = new Random();
-        // We can allow up to 36 Nodes in our network this way.
         while( true )
         {
             int candidate = 1 + random.nextInt( Constants.ADDRESS_SPACE_SIZE );
@@ -241,7 +247,6 @@ public class Node
             }
         }
     }
-
 
 
     /**
@@ -256,9 +261,20 @@ public class Node
         entries.forEach( routingTable::addEntry );
     }
 
-    public void removeNode(InetSocketAddress node) {
-        logger.warn("Attempting to remove routing table entry -> {} from routing table", node);
-        this.routingTable.removeEntry(node);
+    public void addNewNode(String ipAddress, int newNodePort, int newNodeId) {
+        state.checkState(NodeState.CONNECTED, NodeState.CONFIGURED);
+        InetSocketAddress inetSocketAddress = new InetSocketAddress(ipAddress, newNodePort);
+        RoutingTableEntry routingTableEntry = new RoutingTableEntry(inetSocketAddress, newNodeId);
+        routingTable.addEntry(routingTableEntry);
+        logger.info( "Added routing table entry -> {} from routing table", inetSocketAddress );
+
+    }
+
+
+    public void removeNode( InetSocketAddress node )
+    {
+        logger.warn( "Attempting to remove routing table entry -> {} from routing table", node );
+        this.routingTable.removeEntry( node );
     }
 
 
@@ -266,39 +282,31 @@ public class Node
     {
         // TODO: graceful departure
         logger.debug( "Stopping node" );
-//        if( stateManager.getState().compareTo( REGISTERED ) >= 0 )
-//        {
-//
-//            if( stateManager.getState().compareTo( CONNECTED ) >= 0 )
-//            {
-//                // TODO: 10/21/17 Notify all the indexed nodes that I'm leaving
-//                // TODO: 10/20/17 Should we disconnect from the peers or all entries in the routing table?
-//                this.routingTable.getEntries().forEach( entry -> {
-//                    if( communicationProvider.disconnect( entry.getAddress() ) )
-//                    {
-//                        logger.debug( "Successfully disconnected from {}", entry );
-//                    }
-//                    else
-//                    {
-//                        logger.warn( "Unable to disconnect from {}", entry );
-//                    }
-//                } );
-//
-//                this.routingTable.clear();
-//                this.myFiles.clear();
-//                this.entryTable.clear();
-//                stateManager.setState( REGISTERED );
-//            }
+        if( state.getState().compareTo( NodeState.REGISTERED ) >= 0 )
+        {
+            if( state.getState().compareTo( NodeState.CONNECTED ) >= 0 )
+            {
+                this.routingTable.getEntries().parallelStream().forEach( entry -> {
+                    if( communicationProvider.disconnect( entry.getAddress() ) )
+                    {
+                        logger.debug( "Successfully disconnected from {}", entry );
+                    }
+                    else
+                    {
+                        logger.warn( "Unable to disconnect from {}", entry );
+                    }
+                } );
 
+                this.routingTable.clear();
+                state.setState( NodeState.REGISTERED );
+            }
             unregister();
-//        }
+        }
 
         communicationProvider.stop();
         server.stop();
 
-
         logger.debug( "Shutting down periodic tasks" );
-
         executorService.shutdownNow();
         try
         {
@@ -309,7 +317,7 @@ public class Node
             executorService.shutdownNow();
         }
 
-        state=NodeState.IDLE;
+        state .setState( NodeState.IDLE);
         logger.info( "Distributed node stopped" );
     }
 
@@ -335,10 +343,9 @@ public class Node
     }
 
 
-
     public NodeState getState()
     {
-        return state;
+        return state.getState();
     }
 
     public Communicator getCommunicationProvider()

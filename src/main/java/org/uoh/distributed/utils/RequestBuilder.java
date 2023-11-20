@@ -50,7 +50,7 @@ public class RequestBuilder
     {
         System.out.println( "Processing response : " + response );
 
-        StringTokenizer st = new StringTokenizer( response, " " );
+        StringTokenizer st = new StringTokenizer( response, Constants.MSG_SEPARATOR);
         System.out.println( "Response length: " + st.nextToken() );
         String status = st.nextToken();
 
