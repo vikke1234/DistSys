@@ -116,7 +116,7 @@ public class BootstrapServer
                         {
                             if( nodes.size() == 1 )
                             {
-                                replyJoiner.add( String.valueOf( Constants.E0002 ) ).add( nodes.get( 0 ).getIp() ).add( String.valueOf( ( nodes.get( 0 ).getPort() ) ) );
+                                replyJoiner.add( String.valueOf( Constants.E0001 ) ).add( nodes.get( 0 ).getIp() ).add( String.valueOf( ( nodes.get( 0 ).getPort() ) ) );
                             }
                             else if( nodes.size() == 2 )
                             {

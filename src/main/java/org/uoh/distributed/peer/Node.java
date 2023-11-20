@@ -169,7 +169,7 @@ public class Node
         this.routingTable.getEntries().parallelStream()
                          .filter( entry -> entry.getNodeId() != this.nodeId )
                          .forEach( entry -> {
-                             Object toBeUndertaken = communicationProvider.notifyNewNode( entry.getAddress(), new InetSocketAddress( ipAddress, port ), this.nodeId );
+                             Object toBeUndertaken = communicationProvider.notifyNewNode( entry.getAddress(), ipAddress, port , this.nodeId );
                          } );
         /*
             Do some specific work

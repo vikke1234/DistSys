@@ -214,7 +214,6 @@ public class NodeServer
 
         this.node.addNewNode( ipAddress, port, newNodeId );
 
-        logger.info( "Handed over entries to -> {}", newNodeId );
         String msg = String.format( Constants.SYNC_MSG_FORMAT, Constants.TYPE_ENTRIES, RequestBuilder.buildObjectRequest( "OK" ) );
         String response = RequestBuilder.buildRequest( msg );
         retryOrTimeout( response, recipient );

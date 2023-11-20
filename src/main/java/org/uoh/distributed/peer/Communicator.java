@@ -65,7 +65,7 @@ public class Communicator
 
     public Object notifyNewNode( InetSocketAddress peer, InetSocketAddress me, int nodeId )
     {
-        String msg = String.format( Constants.NEWNODE_MSG_FORMAT, me.getHostName(), me.getPort(), nodeId );
+        String msg = String.format( Constants.NEWNODE_MSG_FORMAT, me.getAddress(), me.getPort(), nodeId );
         String request = RequestBuilder.buildRequest( msg );
         logger.debug( "Notifying new node to {} as message: {}", peer, request );
         String response = retryOrTimeout( request, peer );
@@ -83,6 +83,25 @@ public class Communicator
         return new HashMap<>();
     }
 
+    public Object notifyNewNode( InetSocketAddress peer, String ip , int port, int nodeId )
+    {
+        String msg = String.format( Constants.NEWNODE_MSG_FORMAT, ip, port, nodeId );
+        String request = RequestBuilder.buildRequest( msg );
+        logger.debug( "Notifying new node to {} as message: {}", peer, request );
+        String response = retryOrTimeout( request, peer );
+        logger.debug( "Received response : {}", response );
+        if( response != null )
+        {
+            Object obj = RequestBuilder.base64StringToObject( response.split( Constants.MSG_SEPARATOR )[3] );
+            logger.debug( "Received characters to be taken over -> {}", obj );
+            if( obj != null )
+            {
+                return  obj;
+            }
+        }
+
+        return new HashMap<>();
+    }
 
     public void stop()
     {

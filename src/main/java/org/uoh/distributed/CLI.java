@@ -12,7 +12,7 @@ import java.net.UnknownHostException;
 import java.util.Scanner;
 import java.util.UUID;
 
-public class CliInterface
+public class CLI
 {
 
 
