@@ -21,12 +21,15 @@ public class Foobar extends JFrame {
         private int playerX = 0;
         private int playerY = 0;
 
+        private Food food;
+
         public Game(int cellSize, int gridSize) {
             this.cellSize = cellSize;
             this.gridSize = gridSize;
             setFocusable(true);
             requestFocus();
             addKeyListener(this);
+            food = Food.generateFood(gridSize, gridSize);
         }
 
         @Override
@@ -37,7 +40,15 @@ public class Foobar extends JFrame {
                     g.drawRect(i * cellSize, j * cellSize, cellSize, cellSize);
                 }
             }
+            if (playerX == food.getX() && playerY == food.getY()) {
+                food = Food.generateFood(gridSize, gridSize);
+            }
+            drawFood(g, food);
             g.fillOval(playerX * cellSize, playerY * cellSize, cellSize, cellSize);
+        }
+
+        private void drawFood(Graphics g, Food food) {
+            g.fillRect(food.getX() * cellSize, food.getY() * cellSize, cellSize, cellSize);
         }
 
         @Override
